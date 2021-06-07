@@ -1,5 +1,5 @@
 import pyrealsense2 as rs
-from typing import Optional
+from typing import Optional, List
 from enum import IntEnum
 
 
@@ -17,41 +17,63 @@ class Preset(IntEnum):
     MediumDensity = 5
 
 
+class SensorSettingProperty:
+    def adapt(self, sensor):
+        for props, value in self.property_dict.items():
+            sensor.set_option(props, value)
+
+
+class DepthSensorSettingProperty(SensorSettingProperty):
+    def __init__(self):
+        self.property_dict = {
+            rs.option.inter_cam_sync_mode: 1,
+            rs.option.min_distance: 0,
+            rs.option.visual_preset: Preset.HighAccuracy
+        }
+
+
+class ColorSensorSettingProperty(SensorSettingProperty):
+    def __init__(self):
+        self.property_dict = {
+            rs.option.enable_auto_exposure: False,
+            rs.option.enable_auto_white_balance: False,
+            rs.option.exposure: 100,
+            rs.option.gain: 256,
+            rs.option.brightness: 0,
+            rs.option.saturation: 50,
+            rs.option.sharpness: 100,
+            rs.option.white_balance: 4500
+        }
+
+
 class Realsense2Device(DeviceInterface):
-    def __init__(self, device_id: str, config: rs.config):
+    def __init__(self,
+                 device_id: str,
+                 config: rs.config,
+                 color_props=ColorSensorSettingProperty(),
+                 depth_props=DepthSensorSettingProperty(),
+                 ):
         assert isinstance(config, type(rs.config()))
 
         self._device_id: str = device_id
         self._config = config
         self._pipeline = None
         self._pipeline_profile = None
+        self.color_props = color_props
+        self.depth_props = depth_props
 
     def _start(self):
         if self._status is DeviceStatus.Enable:
             return
         self._pipeline = rs.pipeline()
-        self._config.enable_device(self._device_id)
+        self._set_property_sensors(self._config.resolve(self._pipeline))
         self._pipeline_profile = self._pipeline.start(self._config)
 
-    def _set_default_property_of_depth_sensor(self):
-        depth_sensor = self._get_depth_sensor()
-        depth_sensor.set_option(rs.option.min_distance, 0)
-        depth_sensor.set_option(rs.option.visual_preset, Preset.HighAccuracy)
-
-    def _set_default_property_of_color_sensor(self):
-        color_sensor = self._get_color_sensor()
-        color_sensor.set_option(rs.option.enable_auto_exposure, False)
-        color_sensor.set_option(rs.option.enable_auto_white_balance, False)
-        color_sensor.set_option(rs.option.exposure, 100)
-        color_sensor.set_option(rs.option.gain, 256)
-        color_sensor.set_option(rs.option.brightness, 0)
-        color_sensor.set_option(rs.option.saturation, 50)
-        color_sensor.set_option(rs.option.sharpness, 100)
-        color_sensor.set_option(rs.option.white_balance, 4500)
-
-    def _set_default_property_of_sensor(self):
-        self._set_default_property_of_depth_sensor()
-        self._set_default_property_of_color_sensor()
+    def _set_property_sensors(self,resolve):
+        depth_sensor = resolve.get_device().first_depth_sensor()
+        color_sensor = resolve.get_device().first_color_sensor()
+        self.depth_props.adapt(depth_sensor)
+        self.color_props.adapt(color_sensor)
 
     def _get_depth_sensor(self) -> rs.sensor:
         if self._pipeline_profile is None:
@@ -75,7 +97,6 @@ class Realsense2Device(DeviceInterface):
 
     def set_enable(self) -> None:
         self._start()
-        self._set_default_property_of_sensor()
         self._status = DeviceStatus.Enable
 
     def get_status(self) -> DeviceStatus:
@@ -84,7 +105,8 @@ class Realsense2Device(DeviceInterface):
     def poll_for_frames(self) -> Optional[FrameInterface]:
         if self._pipeline is None:
             raise RuntimeError("pipeline is None")
-        frames = self._pipeline.poll_for_frames()  # 여기서도 널 반환함
+        #frames = self._pipeline.poll_for_frames()  # 여기서도 널 반환함
+        frames = self._pipeline.wait_for_frames()
         streams = self._pipeline_profile.get_streams()
         if frames is None:
             return None

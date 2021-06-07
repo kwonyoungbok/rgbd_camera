@@ -1,6 +1,7 @@
 import numpy as np
 from typing import List, Dict, Optional
 import pyrealsense2 as rs
+import cv2
 
 
 from interface.frame import FrameInterface
@@ -64,5 +65,9 @@ class RealsenseFrame(FrameInterface):
         depth_data = frame_set["depth"].get_data()
         # np.dstack 할 필요가 있을지도..?
         return np.array(depth_data)
+
+    def get_colorized_depth(self) -> np.ndarray:
+        return cv2.applyColorMap(cv2.convertScaleAbs(self.get_depth(), alpha=0.03), cv2.COLORMAP_JET)
+
 
 
